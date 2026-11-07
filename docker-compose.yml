@@ -1,0 +1,35 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: solver
+      POSTGRES_USER: solver
+      POSTGRES_PASSWORD: solver
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solver -d solver"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://solver:solver@db:5432/solver
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me-in-production}
+      SERVER_NAME: app1
+      MAX_N: 3000
+      TIME_LIMIT_SECONDS: 60
+      MAX_ACTIVE_TASKS: 3
+      WORKER_SLOTS: 2
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

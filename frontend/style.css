@@ -1,0 +1,153 @@
+[hidden] {
+  display: none !important;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f3f4f6;
+  color: #111827;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: #1f2937;
+  color: #fff;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+main {
+  max-width: 1000px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+#auth-view {
+  max-width: 360px;
+  margin: 40px auto;
+}
+
+#auth-form input {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+input[type="number"] {
+  width: 130px;
+}
+
+textarea {
+  width: 100%;
+  font-family: monospace;
+  margin-bottom: 12px;
+}
+
+button {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #fff;
+  color: #2563eb;
+}
+
+button.danger {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+}
+
+td.actions {
+  white-space: nowrap;
+}
+
+.bar {
+  height: 8px;
+  min-width: 140px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bar div {
+  height: 100%;
+  background: #2563eb;
+  transition: width 0.4s;
+}
+
+tr.done .bar div {
+  background: #16a34a;
+}
+
+tr.failed .bar div,
+tr.cancelled .bar div {
+  background: #9ca3af;
+}
+
+pre {
+  background: #f9fafb;
+  padding: 10px;
+  max-height: 300px;
+  overflow: auto;
+}
+
+.error {
+  color: #dc2626;
+}
+
+.hint {
+  color: #6b7280;
+  font-size: 14px;
+}

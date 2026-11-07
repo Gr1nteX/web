@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Розв'язування СЛАР</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Розв'язування СЛАР методом Гауса</h1>
+    <div id="userbox" hidden>
+      <span id="username"></span>
+      <button id="logout" type="button">Вийти</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="auth-view" class="card" hidden>
+      <h2>Вхід</h2>
+      <form id="auth-form">
+        <input name="username" placeholder="Логін" autocomplete="username" required minlength="3" maxlength="50">
+        <input name="password" type="password" placeholder="Пароль" autocomplete="current-password" required minlength="6" maxlength="64">
+        <div class="row">
+          <button type="submit" value="login">Увійти</button>
+          <button type="submit" value="register" class="secondary">Зареєструватися</button>
+        </div>
+      </form>
+      <p id="auth-error" class="error"></p>
+    </section>
+
+    <section id="app-view" hidden>
+      <div class="card">
+        <h2>Нова задача</h2>
+        <form id="task-form">
+          <div class="row">
+            <label><input type="radio" name="mode" value="random" checked> Випадкова система</label>
+            <label><input type="radio" name="mode" value="manual"> Ввести вручну</label>
+          </div>
+          <div id="random-fields" class="row">
+            <label>Невідомих: <input type="number" name="n" value="1000" min="2"></label>
+            <label>Seed: <input type="number" name="seed" placeholder="випадковий" min="0"></label>
+          </div>
+          <div id="manual-fields" hidden>
+            <textarea name="matrix" rows="6" placeholder="Кожен рядок — одне рівняння: коефіцієнти, потім | і вільний член&#10;2 1 -1 | 8&#10;-3 -1 2 | -11&#10;-2 1 2 | -3"></textarea>
+          </div>
+          <button type="submit">Запустити</button>
+          <p id="limits" class="hint"></p>
+        </form>
+        <p id="task-error" class="error"></p>
+      </div>
+
+      <div class="card">
+        <h2>Мої задачі</h2>
+        <table>
+          <thead>
+            <tr><th>#</th><th>n</th><th>Статус</th><th>Хід виконання</th><th>Сервер</th><th>Створено</th><th></th></tr>
+          </thead>
+          <tbody id="tasks"></tbody>
+        </table>
+      </div>
+
+      <div id="details" class="card" hidden></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
