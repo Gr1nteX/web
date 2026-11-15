@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from . import config
 from .db import Base
 
 QUEUED = "queued"
@@ -43,3 +44,19 @@ class Task(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Server(Base):
+    __tablename__ = "servers"
+
+    name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    slots: Mapped[int]
+    auto: Mapped[bool] = mapped_column(default=False)
+    cpu: Mapped[float | None] = mapped_column(Float)
+    memory_mb: Mapped[float | None] = mapped_column(Float)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+def server_alive():
+    return Server.last_seen > func.now() - timedelta(seconds=config.SERVER_TIMEOUT_SECONDS)

@@ -13,23 +13,76 @@ services:
       timeout: 3s
       retries: 20
 
-  app:
+  app1:
     build:
       context: .
       dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://solver:solver@db:5432/solver
       SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me-in-production}
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
       SERVER_NAME: app1
       MAX_N: 3000
       TIME_LIMIT_SECONDS: 60
       MAX_ACTIVE_TASKS: 3
-      WORKER_SLOTS: 2
+      MAX_SERVERS: 3
+      WORKER_SLOTS: 1
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
+
+  app2:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://solver:solver@db:5432/solver
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me-in-production}
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      SERVER_NAME: app2
+      MAX_N: 3000
+      TIME_LIMIT_SECONDS: 60
+      MAX_ACTIVE_TASKS: 3
+      MAX_SERVERS: 3
+      WORKER_SLOTS: 1
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  scaler:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["python", "-m", "app.scaler"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://solver:solver@db:5432/solver
+      TIME_LIMIT_SECONDS: 60
+      MAX_SERVERS: 3
+      TEMPLATE_SERVICE: app1
+      SCALE_COOLDOWN_SECONDS: 20
+      IDLE_SECONDS_BEFORE_STOP: 30
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - app1
+      - app2
+    stop_grace_period: 60s
+    restart: unless-stopped
+
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
     ports:
-      - "8000:8000"
+      - "8443:443"
+    depends_on:
+      - app1
+      - app2
+    restart: unless-stopped
 
 volumes:
   pgdata:

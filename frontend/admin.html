@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Адмін-панель</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Адмін-панель</h1>
+    <span id="served-by" class="served"></span>
+    <a href="/" class="header-link">До задач</a>
+  </header>
+
+  <main>
+    <p id="error" class="error"></p>
+
+    <section id="stats" class="stats"></section>
+
+    <div class="card">
+      <h2>Сервери застосунку</h2>
+      <table>
+        <thead>
+          <tr><th>Сервер</th><th>Тип</th><th>Задачі</th><th>CPU</th><th>Пам'ять</th><th>Запущено</th><th>Останній сигнал</th></tr>
+        </thead>
+        <tbody id="servers"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Активні задачі</h2>
+      <table>
+        <thead>
+          <tr><th>#</th><th>Користувач</th><th>n</th><th>Статус</th><th>Сервер</th><th>Хід виконання</th><th>Створено</th></tr>
+        </thead>
+        <tbody id="tasks"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>

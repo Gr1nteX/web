@@ -4,10 +4,11 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from . import config
-from .db import get_db
+from .db import SessionLocal, get_db
 from .models import User
 
 ALGORITHM = "HS256"
@@ -46,3 +47,19 @@ def get_current_user(
     if user is None:
         raise unauthorized
     return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Доступ лише для адміністратора")
+    return user
+
+
+def ensure_admin() -> None:
+    with SessionLocal() as db:
+        db.execute(
+            insert(User)
+            .values(username=config.ADMIN_USERNAME, password_hash=hash_password(config.ADMIN_PASSWORD), is_admin=True)
+            .on_conflict_do_nothing(index_elements=[User.username])
+        )
+        db.commit()

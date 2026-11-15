@@ -143,6 +143,54 @@ pre {
   overflow: auto;
 }
 
+.header-link {
+  color: #fff;
+  margin-right: 12px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat {
+  background: #fff;
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.stat span {
+  display: block;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.stat strong {
+  font-size: 22px;
+}
+
+.badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 13px;
+}
+
+.served {
+  margin-left: auto;
+  color: #9ca3af;
+  font-size: 14px;
+}
+
+.notice {
+  color: #b45309;
+  font-weight: 600;
+}
+
 .error {
   color: #dc2626;
 }

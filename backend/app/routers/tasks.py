@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from .. import config
 from ..auth import get_current_user
 from ..db import get_db
-from ..models import ACTIVE_STATUSES, CANCELLED, FINISHED_STATUSES, Task, User
+from ..estimate import queue_estimates
+from ..models import ACTIVE_STATUSES, CANCELLED, FINISHED_STATUSES, QUEUED, Task, User
 from ..schemas import LimitsOut, TaskCreate, TaskDetail, TaskOut
 
 router = APIRouter(prefix="/api", tags=["tasks"])
@@ -39,11 +40,12 @@ def validate(data: TaskCreate) -> tuple[int, dict]:
     return n, {"mode": "manual", "a": data.a, "b": data.b}
 
 
-def to_out(task: Task) -> TaskOut:
-    return TaskOut.model_validate(task_fields(task))
+def to_out(task: Task, estimates: dict) -> TaskOut:
+    return TaskOut.model_validate(task_fields(task, estimates))
 
 
-def task_fields(task: Task) -> dict:
+def task_fields(task: Task, estimates: dict) -> dict:
+    position, wait = estimates.get(task.id, (None, None))
     return {
         "id": task.id,
         "n": task.n,
@@ -56,6 +58,8 @@ def task_fields(task: Task) -> dict:
         "created_at": task.created_at,
         "started_at": task.started_at,
         "finished_at": task.finished_at,
+        "queue_position": position,
+        "wait_seconds": wait,
     }
 
 
@@ -109,19 +113,23 @@ def create_task(data: TaskCreate, user: User = Depends(get_current_user), db: Se
     trim_history(db, user.id)
     db.commit()
     db.refresh(task)
-    return to_out(task)
+    return to_out(task, queue_estimates(db))
 
 
 @router.get("/tasks", response_model=list[TaskOut])
 def list_tasks(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     tasks = db.scalars(select(Task).where(Task.user_id == user.id).order_by(Task.id.desc())).all()
-    return [to_out(t) for t in tasks]
+    estimates = queue_estimates(db) if any(t.status == QUEUED for t in tasks) else {}
+    return [to_out(t, estimates) for t in tasks]
 
 
 @router.get("/tasks/{task_id}", response_model=TaskDetail)
 def get_task(task_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     task = own_task(task_id, user, db)
-    return TaskDetail.model_validate({**task_fields(task), "seed": task.params.get("seed"), "result": task.result})
+    estimates = queue_estimates(db) if task.status == QUEUED else {}
+    return TaskDetail.model_validate(
+        {**task_fields(task, estimates), "seed": task.params.get("seed"), "result": task.result}
+    )
 
 
 @router.post("/tasks/{task_id}/cancel", response_model=TaskOut)
@@ -136,4 +144,4 @@ def cancel_task(task_id: int, user: User = Depends(get_current_user), db: Sessio
     if result.rowcount == 0:
         raise HTTPException(status.HTTP_409_CONFLICT, "Задачу вже завершено")
     db.refresh(task)
-    return to_out(task)
+    return to_out(task, {})

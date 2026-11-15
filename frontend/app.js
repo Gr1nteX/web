@@ -6,12 +6,12 @@ const STATUS = {
   cancelled: "Скасовано",
 };
 const FIELDS = { username: "логін", password: "пароль", n: "кількість невідомих", seed: "seed" };
-const SHOWN_VALUES = 50;
 
 let token = localStorage.getItem("token");
 let limits = null;
 let pollTimer = null;
 let opened = null;
+let noticeTaskId = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -21,6 +21,34 @@ function esc(text) {
 
 function formatTime(iso) {
   return iso ? new Date(iso).toLocaleString("uk-UA", { dateStyle: "short", timeStyle: "medium" }) : "—";
+}
+
+function formatWait(seconds) {
+  const total = Math.ceil(seconds);
+  return total < 60 ? `${total} с` : `${Math.floor(total / 60)} хв ${total % 60} с`;
+}
+
+function queuePlace(t) {
+  const where = `позиція ${t.queue_position}`;
+  if (t.wait_seconds === null) return `${where}, немає доступних серверів`;
+  if (t.wait_seconds === 0) return `${where}, запуск найближчим часом`;
+  return `${where}, очікування ≈ ${formatWait(t.wait_seconds)}`;
+}
+
+function queueText(t) {
+  return t.status === "queued" && t.queue_position ? `У черзі: ${queuePlace(t)}` : null;
+}
+
+function updateNotice(t) {
+  const busy = t && t.status === "queued" && t.queue_position && t.wait_seconds !== 0;
+  if (!busy) {
+    noticeTaskId = null;
+    $("task-notice").textContent = "";
+    return;
+  }
+  noticeTaskId = t.id;
+  $("task-notice").textContent =
+    `Усі обчислювальні ресурси зайняті. Задачу #${t.id} поставлено в чергу: ${queuePlace(t)}.`;
 }
 
 function isActive(task) {
@@ -41,6 +69,8 @@ async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(path, { ...options, headers });
+  const server = response.headers.get("X-Server");
+  if (server) $("served-by").textContent = `Відповів сервер: ${server}`;
   const data = await response.json().catch(() => null);
   if (response.status === 401 && token) {
     logout();
@@ -56,11 +86,12 @@ function showAuth() {
   $("userbox").hidden = true;
 }
 
-async function showApp() {
+async function showApp(user) {
   $("auth-view").hidden = true;
   $("app-view").hidden = false;
   $("userbox").hidden = false;
-  $("username").textContent = localStorage.getItem("username") || "";
+  $("username").textContent = user.username;
+  $("admin-link").hidden = !user.is_admin;
   limits = await api("/api/limits");
   $("limits").textContent =
     `Обмеження: до ${limits.max_n} невідомих (вручну — до ${limits.max_n_manual}), ` +
@@ -75,15 +106,15 @@ async function showApp() {
 function logout() {
   token = null;
   localStorage.removeItem("token");
-  localStorage.removeItem("username");
   clearInterval(pollTimer);
   opened = null;
+  updateNotice(null);
   $("details").hidden = true;
   showAuth();
 }
 
 function taskRow(t) {
-  const note = t.error || t.stage;
+  const note = t.error || queueText(t) || t.stage;
   const buttons = [
     isActive(t) ? `<button type="button" class="danger" data-cancel="${t.id}">Скасувати</button>` : "",
     `<button type="button" class="secondary" data-open="${t.id}">Деталі</button>`,
@@ -107,13 +138,14 @@ async function refresh() {
     $("tasks").innerHTML = tasks.length
       ? tasks.map(taskRow).join("")
       : `<tr><td colspan="7" class="hint">Задач ще немає</td></tr>`;
+    if (noticeTaskId) updateNotice(tasks.find((t) => t.id === noticeTaskId));
     if (opened) {
       const current = tasks.find((t) => t.id === opened.id);
       if (!current) closeDetails();
       else if (isActive(current) || current.status !== opened.status) showDetails(current.id);
     }
   } catch (err) {
-    $("task-error").textContent = err.message;
+    $("served-by").textContent = "Немає зв'язку з сервером";
   }
 }
 
@@ -130,12 +162,12 @@ async function showDetails(id) {
     <p>Кількість невідомих: ${t.n} (${kind})</p>
     <p>Статус: ${STATUS[t.status]}${t.stage !== STATUS[t.status] ? ` — ${esc(t.stage)}` : ""} (${t.progress.toFixed(0)}%)</p>
     <p>Сервер: ${esc(t.server || "—")}</p>`;
+  if (queueText(t)) html += `<p>${queueText(t)}</p>`;
   const seconds = duration(t);
   if (seconds && t.status === "done") html += `<p>Час обчислення: ${seconds} с</p>`;
   if (t.error) html += `<p class="error">${esc(t.error)}</p>`;
   if (t.result) {
-    const values = t.result.x.slice(0, SHOWN_VALUES).map((v, i) => `x${i + 1} = ${v.toPrecision(10)}`);
-    if (t.result.x.length > SHOWN_VALUES) values.push(`… ще ${t.result.x.length - SHOWN_VALUES} значень`);
+    const values = t.result.x.map((v, i) => `x${i + 1} = ${v.toPrecision(10)}`);
     html += `<p>Нев'язка ‖Ax − b‖ = ${t.result.residual.toExponential(3)}</p><pre>${values.join("\n")}</pre>`;
   }
   html += `<button type="button" class="secondary" id="close-details">Закрити</button>`;
@@ -198,9 +230,8 @@ $("auth-form").addEventListener("submit", async (e) => {
     });
     token = data.access_token;
     localStorage.setItem("token", token);
-    localStorage.setItem("username", data.username);
     form.reset();
-    showApp();
+    showApp(data);
   } catch (err) {
     $("auth-error").textContent = err.message;
   }
@@ -217,7 +248,8 @@ $("task-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("task-error").textContent = "";
   try {
-    await api("/api/tasks", { method: "POST", body: JSON.stringify(buildTask(e.target)) });
+    const task = await api("/api/tasks", { method: "POST", body: JSON.stringify(buildTask(e.target)) });
+    updateNotice(task);
     refresh();
   } catch (err) {
     $("task-error").textContent = err.message;
