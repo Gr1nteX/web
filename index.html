@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Розв'язування СЛАР</title>
+<style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 15px; color: #222; }
+    h1 { font-size: 24px; }
+    section { border: 1px solid #ccc; border-radius: 6px; padding: 15px; margin-bottom: 20px; }
+    input { padding: 6px; margin: 4px 4px 4px 0; }
+    button { padding: 6px 12px; margin: 2px; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+    th { background: #f2f2f2; }
+    .server { color: #555; }
+    .message { color: #a00; }
+    pre { max-height: 300px; overflow: auto; background: #f7f7f7; padding: 10px; }
+</style>
+</head>
+<body>
+<h1>Розв'язування систем лінійних рівнянь</h1>
+<p class="server">Останню відповідь дав сервер: <b id="server">—</b></p>
+
+<section id="login-section">
+    <h2>Вхід</h2>
+    <input id="username" placeholder="Логін">
+    <input id="password" type="password" placeholder="Пароль">
+    <button onclick="auth('login')">Увійти</button>
+    <button onclick="auth('register')">Зареєструватися</button>
+    <p id="login-message" class="message"></p>
+</section>
+
+<section id="app-section" hidden>
+    <p>Ви увійшли як <b id="current-user"></b> <button onclick="logout()">Вийти</button></p>
+    <h2>Нова задача</h2>
+    <p>Система з n рівнянь з випадковими коефіцієнтами розв'язується методом Гауса.
+        n від 2 до 1500, ліміт часу 30 с, не більше 3 активних задач.</p>
+    <input id="n" type="number" min="2" max="1500" value="500">
+    <button onclick="createTask()">Розв'язати</button>
+    <p id="task-message" class="message"></p>
+    <h2>Мої задачі</h2>
+    <table>
+        <thead><tr><th>№</th><th>n</th><th>Стан</th><th>Прогрес</th><th>Воркер</th><th>Дії</th></tr></thead>
+        <tbody id="tasks"></tbody>
+    </table>
+    <div id="result-box" hidden>
+        <h2>Результат задачі №<span id="result-id"></span></h2>
+        <p>Нев'язка: <b id="residual"></b></p>
+        <pre id="result"></pre>
+    </div>
+</section>
+
+<section id="admin-section" hidden>
+    <h2>Панель адміністратора</h2>
+    <h3>API-сервери</h3>
+    <table>
+        <thead><tr><th>Сервер</th><th>Оброблено запитів</th><th>Стан</th></tr></thead>
+        <tbody id="admin-servers"></tbody>
+    </table>
+    <h3>Воркери (максимум 4, додаткові запускаються автоматично, коли є черга)</h3>
+    <table>
+        <thead><tr><th>Воркер</th><th>Задача</th><th>Стан</th></tr></thead>
+        <tbody id="admin-workers"></tbody>
+    </table>
+    <h3>Задачі за станом</h3>
+    <p id="admin-counts"></p>
+    <h3>Активні задачі всіх користувачів</h3>
+    <table>
+        <thead><tr><th>№</th><th>Користувач</th><th>n</th><th>Стан</th><th>Прогрес</th><th>Воркер</th></tr></thead>
+        <tbody id="admin-tasks"></tbody>
+    </table>
+</section>
+
+<script>
+    const MAX_N = 1500;
+    let token = localStorage.getItem("token");
+    let isAdmin = localStorage.getItem("isAdmin") === "true";
+    let timer = null;
+
+    async function api(method, path, data) {
+        const response = await fetch(path, {
+            method: method,
+            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+            body: data ? JSON.stringify(data) : null
+        });
+        const json = await response.json();
+        document.getElementById("server").textContent = json.server;
+        if (!response.ok) {
+            const error = new Error(json.error);
+            error.status = response.status;
+            throw error;
+        }
+        return json;
+    }
+
+    async function auth(action) {
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+        try {
+            const user = await api("POST", "/api/" + action, { username: username, password: password });
+            token = user.token;
+            isAdmin = user.is_admin;
+            localStorage.setItem("token", token);
+            localStorage.setItem("username", user.username);
+            localStorage.setItem("isAdmin", isAdmin);
+            showApp();
+        } catch (error) {
+            document.getElementById("login-message").textContent = error.message;
+        }
+    }
+
+    function logout() {
+        api("POST", "/api/logout");
+        showLogin();
+    }
+
+    function showLogin() {
+        localStorage.clear();
+        token = null;
+        isAdmin = false;
+        clearInterval(timer);
+        document.getElementById("login-section").hidden = false;
+        document.getElementById("app-section").hidden = true;
+        document.getElementById("admin-section").hidden = true;
+    }
+
+    function showApp() {
+        document.getElementById("login-section").hidden = true;
+        document.getElementById("app-section").hidden = false;
+        document.getElementById("admin-section").hidden = !isAdmin;
+        document.getElementById("current-user").textContent = localStorage.getItem("username");
+        clearInterval(timer);
+        timer = setInterval(refresh, 1500);
+        refresh();
+    }
+
+    async function createTask() {
+        const n = Number(document.getElementById("n").value);
+        const message = document.getElementById("task-message");
+        if (!Number.isInteger(n) || n < 2 || n > MAX_N) {
+            message.textContent = "Кількість невідомих має бути цілим числом від 2 до " + MAX_N;
+            return;
+        }
+        try {
+            const task = await api("POST", "/api/tasks", { n: n });
+            if (task.wait > 0) {
+                message.textContent = "Усі воркери зайняті. Задачу №" + task.id + " поставлено в чергу: місце " +
+                    task.position + ", приблизний час очікування " + task.wait + " с";
+            } else {
+                message.textContent = "Задачу №" + task.id + " прийнято";
+            }
+            refresh();
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    }
+
+    async function cancelTask(id) {
+        try {
+            await api("POST", "/api/tasks/" + id + "/cancel");
+            refresh();
+        } catch (error) {
+            document.getElementById("task-message").textContent = error.message;
+        }
+    }
+
+    async function showResult(id) {
+        try {
+            const result = await api("GET", "/api/tasks/" + id + "/result");
+            let text = "";
+            for (let i = 0; i < result.x.length; i++) {
+                text += "x" + (i + 1) + " = " + result.x[i] + "\n";
+            }
+            document.getElementById("result-id").textContent = id;
+            document.getElementById("residual").textContent = result.residual;
+            document.getElementById("result").textContent = text;
+            document.getElementById("result-box").hidden = false;
+        } catch (error) {
+            document.getElementById("task-message").textContent = error.message;
+        }
+    }
+
+    function statusText(task) {
+        if (task.status === "queued" && task.wait > 0) {
+            return "У черзі: місце " + task.position + ", приблизно " + task.wait + " с";
+        }
+        if (task.status === "queued") {
+            return "У черзі, зараз почнеться";
+        }
+        if (task.status === "running") {
+            return "Виконується";
+        }
+        if (task.status === "done") {
+            return "Готово";
+        }
+        if (task.status === "cancelled") {
+            return "Скасовано";
+        }
+        return "Помилка: " + task.error;
+    }
+
+    function actions(task) {
+        if (task.status === "queued" || task.status === "running") {
+            return "<button onclick='cancelTask(" + task.id + ")'>Скасувати</button>";
+        }
+        if (task.status === "done") {
+            return "<button onclick='showResult(" + task.id + ")'>Результат</button>";
+        }
+        return "";
+    }
+
+    async function refresh() {
+        try {
+            const data = await api("GET", "/api/tasks");
+            let rows = "";
+            for (const task of data.tasks) {
+                rows += "<tr><td>" + task.id + "</td><td>" + task.n + "</td><td>" + statusText(task) + "</td>" +
+                    "<td><progress value='" + task.progress + "' max='100'></progress> " + task.progress + "%</td>" +
+                    "<td>" + (task.worker || "") + "</td><td>" + actions(task) + "</td></tr>";
+            }
+            document.getElementById("tasks").innerHTML = rows;
+            if (isAdmin) {
+                showAdmin(await api("GET", "/api/admin"));
+            }
+        } catch (error) {
+            if (error.status === 401) {
+                showLogin();
+            }
+        }
+    }
+
+    function showAdmin(data) {
+        let rows = "";
+        for (const server of data.servers) {
+            rows += "<tr><td>" + server.name + "</td><td>" + server.requests + "</td><td>" +
+                (server.alive ? "працює" : "не відповідає") + "</td></tr>";
+        }
+        document.getElementById("admin-servers").innerHTML = rows;
+
+        rows = "";
+        for (const worker of data.workers) {
+            rows += "<tr><td>" + worker.name + "</td><td>" + (worker.task_id ? "№" + worker.task_id : "вільний") +
+                "</td><td>" + (worker.alive ? "працює" : "не відповідає") + "</td></tr>";
+        }
+        document.getElementById("admin-workers").innerHTML = rows;
+
+        let counts = "";
+        for (const item of data.counts) {
+            counts += item.status + ": " + item.count + "; ";
+        }
+        document.getElementById("admin-counts").textContent = counts;
+
+        rows = "";
+        for (const task of data.tasks) {
+            rows += "<tr><td>" + task.id + "</td><td>" + task.username + "</td><td>" + task.n + "</td><td>" +
+                task.status + "</td><td>" + task.progress + "%</td><td>" + (task.worker || "") + "</td></tr>";
+        }
+        document.getElementById("admin-tasks").innerHTML = rows;
+    }
+
+    if (token) {
+        showApp();
+    } else {
+        showLogin();
+    }
+</script>
+</body>
+</html>

@@ -1,6 +1,0 @@
-**/__pycache__
-**/*.py[cod]
-.git
-.venv
-venv
-.env

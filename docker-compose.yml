@@ -6,83 +6,82 @@ services:
       POSTGRES_USER: solver
       POSTGRES_PASSWORD: solver
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U solver -d solver"]
-      interval: 3s
-      timeout: 3s
-      retries: 20
-
-  app1:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    environment:
-      DATABASE_URL: postgresql+psycopg://solver:solver@db:5432/solver
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me-in-production}
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
-      SERVER_NAME: app1
-      MAX_N: 3000
-      TIME_LIMIT_SECONDS: 60
-      MAX_ACTIVE_TASKS: 3
-      MAX_SERVERS: 3
-      WORKER_SLOTS: 1
-    depends_on:
-      db:
-        condition: service_healthy
+      test: pg_isready -h 127.0.0.1 -U solver -d solver
+      interval: 2s
+      retries: 30
     restart: unless-stopped
 
-  app2:
+  api1:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      target: python
+    command: python api.py
     environment:
-      DATABASE_URL: postgresql+psycopg://solver:solver@db:5432/solver
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-me-in-production}
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin123}
-      SERVER_NAME: app2
-      MAX_N: 3000
-      TIME_LIMIT_SECONDS: 60
-      MAX_ACTIVE_TASKS: 3
-      MAX_SERVERS: 3
-      WORKER_SLOTS: 1
+      DATABASE_URL: postgresql://solver:solver@db/solver
+      SERVER_NAME: api1
     depends_on:
       db:
         condition: service_healthy
+    mem_limit: 256m
+    restart: unless-stopped
+
+  api2:
+    build:
+      context: .
+      target: python
+    command: python api.py
+    environment:
+      DATABASE_URL: postgresql://solver:solver@db/solver
+      SERVER_NAME: api2
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: python
+    command: python worker.py
+    environment:
+      DATABASE_URL: postgresql://solver:solver@db/solver
+    depends_on:
+      db:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+    cpus: 1
+    mem_limit: 512m
     restart: unless-stopped
 
   scaler:
     build:
       context: .
-      dockerfile: backend/Dockerfile
-    command: ["python", "-m", "app.scaler"]
+      target: python
+    command: python scaler.py
     environment:
-      DATABASE_URL: postgresql+psycopg://solver:solver@db:5432/solver
-      TIME_LIMIT_SECONDS: 60
-      MAX_SERVERS: 3
-      TEMPLATE_SERVICE: app1
-      SCALE_COOLDOWN_SECONDS: 20
-      IDLE_SECONDS_BEFORE_STOP: 30
+      DATABASE_URL: postgresql://solver:solver@db/solver
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
-      - app1
-      - app2
-    stop_grace_period: 60s
+      - worker
     restart: unless-stopped
 
   nginx:
     build:
       context: .
-      dockerfile: nginx/Dockerfile
+      target: nginx
     ports:
       - "8443:443"
+      - "8080:80"
     depends_on:
-      - app1
-      - app2
+      - api1
+      - api2
     restart: unless-stopped
 
 volumes:
-  pgdata:
+  db-data:
