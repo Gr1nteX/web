@@ -1,14 +1,14 @@
 import json
 import os
-import random
 import socket
 import time
 
+import numpy as np
 import psycopg
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 NAME = socket.gethostname()
-TIME_LIMIT = 30
+TIME_LIMIT = 60
 
 
 class Cancelled(Exception):
@@ -34,7 +34,7 @@ def requeue_lost_tasks(db):
 def claim_task(db):
     with db.transaction():
         task = db.execute(
-            "SELECT id, n FROM tasks WHERE status = 'queued' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED"
+            "SELECT id, n, matrix FROM tasks WHERE status = 'queued' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED"
         ).fetchone()
         if task is not None:
             db.execute(
@@ -56,39 +56,30 @@ def report(db, task_id, progress, started):
         raise Cancelled
 
 
-def solve(db, task_id, n):
+def solve(db, task_id, n, matrix):
     started = time.time()
-    generator = random.Random(task_id)
-    a = [[generator.uniform(-10, 10) for j in range(n + 1)] for i in range(n)]
-    original = [row[:] for row in a]
+    if matrix is None:
+        a = np.random.default_rng(task_id).uniform(-10, 10, (n, n + 1))
+    else:
+        a = np.array(json.loads(matrix), dtype=float)
+    original = a.copy()
 
     for k in range(n):
-        p = k
-        for i in range(k + 1, n):
-            if abs(a[i][k]) > abs(a[p][k]):
-                p = i
-        if abs(a[p][k]) < 1e-12:
+        p = k + np.argmax(np.abs(a[k:, k]))
+        if abs(a[p, k]) < 1e-12:
             raise ValueError("Матриця вироджена, розв'язок не єдиний")
-        a[k], a[p] = a[p], a[k]
-        for i in range(k + 1, n):
-            factor = a[i][k] / a[k][k]
-            for j in range(k, n + 1):
-                a[i][j] -= factor * a[k][j]
-        report(db, task_id, (k + 1) * 100 // n, started)
+        a[[k, p]] = a[[p, k]]
+        factors = a[k + 1:, k] / a[k, k]
+        a[k + 1:, k:] -= np.outer(factors, a[k, k:])
+        if k % 10 == 0:
+            report(db, task_id, int(100 * (1 - ((n - k) / n) ** 3)), started)
 
-    x = [0.0] * n
+    x = np.zeros(n)
     for i in range(n - 1, -1, -1):
-        total = 0.0
-        for j in range(i + 1, n):
-            total += a[i][j] * x[j]
-        x[i] = (a[i][n] - total) / a[i][i]
+        x[i] = (a[i, n] - a[i, i + 1:n] @ x[i + 1:]) / a[i, i]
+    report(db, task_id, 100, started)
 
-    residual = 0.0
-    for row in original:
-        total = 0.0
-        for j in range(n):
-            total += row[j] * x[j]
-        residual = max(residual, abs(total - row[n]))
+    residual = np.max(np.abs(original[:, :n] @ x - original[:, n]))
     return x, residual
 
 
@@ -100,9 +91,9 @@ def finish(db, task_id, status, result, error):
     )
 
 
-def run(db, task_id, n):
+def run(db, task_id, n, matrix):
     try:
-        x, residual = solve(db, task_id, n)
+        x, residual = solve(db, task_id, n, matrix)
     except Cancelled:
         print("Задачу", task_id, "скасовано")
         return
@@ -112,7 +103,7 @@ def run(db, task_id, n):
     except ValueError as error:
         finish(db, task_id, "failed", None, str(error))
         return
-    result = json.dumps({"residual": residual, "x": [round(value, 6) for value in x]})
+    result = json.dumps({"residual": float(residual), "x": x.round(6).tolist()})
     finish(db, task_id, "done", result, None)
     print("Задачу", task_id, "розв'язано")
 
@@ -129,4 +120,4 @@ while True:
         time.sleep(1)
         continue
     print("Воркер", NAME, "взяв задачу", task[0], "n =", task[1])
-    run(db, task[0], task[1])
+    run(db, task[0], task[1], task[2])

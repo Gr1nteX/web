@@ -1,6 +1,6 @@
 FROM python:3.13-slim AS python
 ENV PYTHONUNBUFFERED=1
-RUN pip install --no-cache-dir "psycopg[binary]==3.3.8" "docker==7.1.0"
+RUN pip install --no-cache-dir "psycopg[binary]==3.3.8" "numpy==2.5.3" "docker==7.1.0"
 WORKDIR /app
 COPY api.py worker.py scaler.py ./
 

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import os
 import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -9,8 +10,10 @@ from psycopg.rows import dict_row
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 SERVER_NAME = os.environ["SERVER_NAME"]
-MAX_N = 1500
+MAX_N = 3000
+MAX_N_MANUAL = 20
 MAX_ACTIVE_TASKS = 3
+SECONDS_PER_N3 = 0.000000002
 
 
 class ApiError(Exception):
@@ -85,19 +88,42 @@ def queue_info(db, task_id):
     workers = count(db, "SELECT count(*) FROM workers WHERE last_seen > now() - interval '15 seconds'")
     if position <= workers - running:
         return position, 0
-    average = db.execute(
-        "SELECT avg(extract(epoch FROM finished_at - started_at)) AS seconds FROM tasks WHERE status = 'done'"
-    ).fetchone()["seconds"]
-    if average is None:
-        average = 10
-    tasks_ahead = position - 1 + running
-    return position, round(float(average) * tasks_ahead / max(workers, 1))
+    speed = db.execute(
+        "SELECT avg(extract(epoch FROM finished_at - started_at) / (n::float * n * n)) AS speed "
+        "FROM tasks WHERE status = 'done' AND n >= 500"
+    ).fetchone()["speed"]
+    if speed is None:
+        speed = SECONDS_PER_N3
+    work = db.execute(
+        "SELECT coalesce(sum(n::float * n * n), 0) AS work FROM tasks "
+        "WHERE status = 'running' OR (status = 'queued' AND id < %s)",
+        (task_id,),
+    ).fetchone()["work"]
+    return position, round(float(speed) * work / max(workers, 1))
+
+
+def check_matrix(matrix):
+    if type(matrix) is not list or len(matrix) < 2 or len(matrix) > MAX_N_MANUAL:
+        raise ApiError(400, f"Своя система має містити від 2 до {MAX_N_MANUAL} рівнянь")
+    n = len(matrix)
+    for row in matrix:
+        if type(row) is not list or len(row) != n + 1:
+            raise ApiError(400, f"У кожному рядку має бути {n + 1} чисел: {n} коефіцієнтів і вільний член")
+        for value in row:
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ApiError(400, "Усі коефіцієнти мають бути числами")
+    return n
 
 
 def create_task(db, user_id, data):
-    n = data.get("n")
-    if type(n) is not int or n < 2 or n > MAX_N:
-        raise ApiError(400, f"Кількість невідомих має бути цілим числом від 2 до {MAX_N}")
+    matrix = data.get("matrix")
+    if matrix is None:
+        n = data.get("n")
+        if type(n) is not int or n < 2 or n > MAX_N:
+            raise ApiError(400, f"Кількість невідомих має бути цілим числом від 2 до {MAX_N}")
+    else:
+        n = check_matrix(matrix)
+        matrix = json.dumps(matrix)
     with db.transaction():
         db.execute("SELECT id FROM users WHERE id = %s FOR UPDATE", (user_id,))
         active = count(
@@ -105,7 +131,9 @@ def create_task(db, user_id, data):
         )
         if active >= MAX_ACTIVE_TASKS:
             raise ApiError(429, f"Можна мати не більше {MAX_ACTIVE_TASKS} активних задач")
-        task = db.execute("INSERT INTO tasks (user_id, n) VALUES (%s, %s) RETURNING id", (user_id, n)).fetchone()
+        task = db.execute(
+            "INSERT INTO tasks (user_id, n, matrix) VALUES (%s, %s, %s) RETURNING id", (user_id, n, matrix)
+        ).fetchone()
     position, wait = queue_info(db, task["id"])
     return {"id": task["id"], "position": position, "wait": wait}
 

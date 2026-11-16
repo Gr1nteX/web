@@ -15,6 +15,7 @@ CREATE TABLE tasks (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     n INTEGER NOT NULL,
+    matrix TEXT,
     status TEXT NOT NULL DEFAULT 'queued',
     progress INTEGER NOT NULL DEFAULT 0,
     result TEXT,

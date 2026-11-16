@@ -42,18 +42,32 @@ services:
     mem_limit: 256m
     restart: unless-stopped
 
-  worker:
+  worker1:
     build:
       context: .
       target: python
     command: python worker.py
+    hostname: worker1
     environment:
       DATABASE_URL: postgresql://solver:solver@db/solver
     depends_on:
       db:
         condition: service_healthy
-    deploy:
-      replicas: 2
+    cpus: 1
+    mem_limit: 512m
+    restart: unless-stopped
+
+  worker2:
+    build:
+      context: .
+      target: python
+    command: python worker.py
+    hostname: worker2
+    environment:
+      DATABASE_URL: postgresql://solver:solver@db/solver
+    depends_on:
+      db:
+        condition: service_healthy
     cpus: 1
     mem_limit: 512m
     restart: unless-stopped
@@ -68,7 +82,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
-      - worker
+      - worker1
+      - worker2
     restart: unless-stopped
 
   nginx:

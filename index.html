@@ -8,7 +8,7 @@
     body { font-family: Arial, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 15px; color: #222; }
     h1 { font-size: 24px; }
     section { border: 1px solid #ccc; border-radius: 6px; padding: 15px; margin-bottom: 20px; }
-    input { padding: 6px; margin: 4px 4px 4px 0; }
+    input, textarea { padding: 6px; margin: 4px 4px 4px 0; }
     button { padding: 6px 12px; margin: 2px; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
@@ -34,10 +34,14 @@
 <section id="app-section" hidden>
     <p>Ви увійшли як <b id="current-user"></b> <button onclick="logout()">Вийти</button></p>
     <h2>Нова задача</h2>
-    <p>Система з n рівнянь з випадковими коефіцієнтами розв'язується методом Гауса.
-        n від 2 до 1500, ліміт часу 30 с, не більше 3 активних задач.</p>
-    <input id="n" type="number" min="2" max="1500" value="500">
-    <button onclick="createTask()">Розв'язати</button>
+    <p>Метод Гауса. Ліміт часу 60 с, не більше 3 активних задач.</p>
+    <p>Випадкова система з n рівнянь (n від 2 до 3000):</p>
+    <input id="n" type="number" min="2" max="3000" value="1000">
+    <button onclick="createRandomTask()">Розв'язати</button>
+    <p>Своя система (від 2 до 20 рівнянь): кожен рядок — коефіцієнти і вільний член через пробіл.</p>
+    <textarea id="matrix" rows="4" cols="40" placeholder="2 1 5&#10;1 -1 1"></textarea>
+    <br>
+    <button onclick="createManualTask()">Розв'язати свою</button>
     <p id="task-message" class="message"></p>
     <h2>Мої задачі</h2>
     <table>
@@ -73,7 +77,8 @@
 </section>
 
 <script>
-    const MAX_N = 1500;
+    const MAX_N = 3000;
+    const MAX_N_MANUAL = 20;
     let token = localStorage.getItem("token");
     let isAdmin = localStorage.getItem("isAdmin") === "true";
     let timer = null;
@@ -135,15 +140,41 @@
         refresh();
     }
 
-    async function createTask() {
+    function createRandomTask() {
         const n = Number(document.getElementById("n").value);
-        const message = document.getElementById("task-message");
         if (!Number.isInteger(n) || n < 2 || n > MAX_N) {
-            message.textContent = "Кількість невідомих має бути цілим числом від 2 до " + MAX_N;
+            document.getElementById("task-message").textContent =
+                "Кількість невідомих має бути цілим числом від 2 до " + MAX_N;
             return;
         }
+        sendTask({ n: n });
+    }
+
+    function createManualTask() {
+        const lines = document.getElementById("matrix").value.trim().split("\n");
+        const matrix = [];
+        for (const line of lines) {
+            matrix.push(line.trim().split(/\s+/).map(Number));
+        }
+        const n = matrix.length;
+        const message = document.getElementById("task-message");
+        if (n < 2 || n > MAX_N_MANUAL) {
+            message.textContent = "Своя система має містити від 2 до " + MAX_N_MANUAL + " рівнянь";
+            return;
+        }
+        for (const row of matrix) {
+            if (row.length !== n + 1 || row.some(isNaN)) {
+                message.textContent = "У кожному рядку має бути " + (n + 1) + " чисел: " + n + " коефіцієнтів і вільний член";
+                return;
+            }
+        }
+        sendTask({ matrix: matrix });
+    }
+
+    async function sendTask(data) {
+        const message = document.getElementById("task-message");
         try {
-            const task = await api("POST", "/api/tasks", { n: n });
+            const task = await api("POST", "/api/tasks", data);
             if (task.wait > 0) {
                 message.textContent = "Усі воркери зайняті. Задачу №" + task.id + " поставлено в чергу: місце " +
                     task.position + ", приблизний час очікування " + task.wait + " с";
